@@ -5,8 +5,22 @@ data/
 *.npy
 *.npz
 
-# Virtual environment
-.venv/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# System files
 .DS_Store
+.vscode/
+*.swp
+*.swo
