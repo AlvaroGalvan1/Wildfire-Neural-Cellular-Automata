@@ -1,0 +1,12 @@
+# Data files
+data/
+*.tif
+*.tiff
+*.npy
+*.npz
+
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
