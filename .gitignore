@@ -24,3 +24,5 @@ env/
 .vscode/
 *.swp
 *.swo
+.venv/
+__pycache__/
