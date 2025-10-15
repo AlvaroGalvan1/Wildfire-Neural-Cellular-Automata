@@ -118,6 +118,15 @@ USGS_VARIABLES = {
     "aspect": "aspect.tif"
 }
 
+SAMPLE_001_WINDNINJA_TIMESTAMPS = [
+    "2024-07-15_06-00",
+    "2024-07-15_09-00",
+    "2024-07-15_12-00",
+    "2024-07-15_15-00"
+]
+
+DEFAULT_TIMESTAMP = "2024-07-15_12-00"
+
 WINDNINJA_VARIABLES = {
     "wind_speed": "wind_speed_{timestamp}.tif",
     "wind_direction": "wind_direction_{timestamp}.tif"

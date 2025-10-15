@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from rasterio.crs import CRS
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import reproject, Resampling
 from rasterio.transform import from_bounds
 from affine import Affine
 
@@ -24,7 +24,7 @@ class Grid:
         bounds: tuple,
         resolution: float = RESOLUTION,
         crs: Optional[str] = None,
-        channel_names: Optional[List[str]] = None
+        channel_names: Optional[List[str]] = None,
     ):
         """
         Initialize Grid.
@@ -49,6 +49,9 @@ class Grid:
         self.channel_metadata = {name: CHANNEL_METADATA[name] for name in self.channel_names}
         self.loaded_channels: Set[str] = set()
         self.categorical_mappings: Dict[str, Dict[int, int]] = {}
+        self.timestamp: Optional[str] = None  # <-- Added here
+
+    # ---------------------------- Shape & Transform ---------------------------- #
     
     def _calculate_shape(self) -> Tuple[int, int]:
         """Calculate grid shape from bounds and resolution."""
@@ -61,6 +64,8 @@ class Grid:
         """Calculate affine transform for the grid."""
         minx, miny, maxx, maxy = self.bounds
         return from_bounds(minx, miny, maxx, maxy, self.shape[1], self.shape[0])
+
+    # ---------------------------- Channels ---------------------------- #
     
     def get_channel_idx(self, channel_name: str) -> int:
         """Get the index of a channel in the data array."""
@@ -71,14 +76,6 @@ class Grid:
     def add_layer(self, loaded_layer: LoadedLayer, channel_name: str) -> None:
         """
         Add a LoadedLayer to the grid.
-        
-        Reprojects and resamples the layer to match grid's CRS and resolution,
-        then inserts into the appropriate channel. For categorical layers,
-        applies mapping to convert codes to indices.
-        
-        Args:
-            loaded_layer: LoadedLayer to add
-            channel_name: Name of the channel to add to
         """
         if channel_name not in self.channel_names:
             raise ValueError(f"Channel '{channel_name}' not in grid")
@@ -94,17 +91,9 @@ class Grid:
         channel_idx = self.get_channel_idx(channel_name)
         self.data[:, :, channel_idx] = resampled_data
         self.loaded_channels.add(channel_name)
-    
+
     def _resample_to_grid(self, loaded_layer: LoadedLayer) -> np.ndarray:
-        """
-        Resample LoadedLayer to match grid's CRS, resolution, and bounds.
-        
-        Args:
-            loaded_layer: LoadedLayer to resample
-            
-        Returns:
-            Resampled data array matching grid shape
-        """
+        """Resample LoadedLayer to match grid CRS, resolution, and bounds."""
         src_crs = loaded_layer.crs
         src_transform = loaded_layer.transform
         src_data = loaded_layer.data
@@ -128,16 +117,7 @@ class Grid:
         return dst_data
     
     def _apply_categorical_mapping(self, data: np.ndarray, channel_name: str) -> np.ndarray:
-        """
-        Apply categorical mapping to convert codes to indices.
-        
-        Args:
-            data: Array with original categorical codes
-            channel_name: Name of the channel
-            
-        Returns:
-            Array with codes mapped to indices (0 to n-1)
-        """
+        """Apply categorical mapping to convert codes to indices."""
         mask = ~np.isnan(data)
         unique_codes = np.unique(data[mask])
         
@@ -152,31 +132,16 @@ class Grid:
             mapped_data[data == code] = idx
         
         return mapped_data
+
+    # ---------------------------- Access Methods ---------------------------- #
     
     def get_channel(self, channel_name: str) -> np.ndarray:
-        """
-        Get data for a specific channel.
-        
-        Args:
-            channel_name: Name of the channel
-            
-        Returns:
-            2D array (H, W) for the channel
-        """
+        """Get data for a specific channel."""
         channel_idx = self.get_channel_idx(channel_name)
         return self.data[:, :, channel_idx]
     
     def get_values_at(self, x: float, y: float) -> Dict[str, float]:
-        """
-        Get values at a geographic coordinate.
-        
-        Args:
-            x: X coordinate (longitude/easting)
-            y: Y coordinate (latitude/northing)
-            
-        Returns:
-            Dictionary mapping channel names to values
-        """
+        """Get values at a geographic coordinate."""
         row, col = self._coords_to_pixel(x, y)
         
         if not (0 <= row < self.shape[0] and 0 <= col < self.shape[1]):
@@ -186,11 +151,22 @@ class Grid:
             name: float(self.data[row, col, idx])
             for idx, name in enumerate(self.channel_names)
         }
+
+    def set_timestamp(self, timestamp: str) -> None:
+        """
+        Set timestamp for dynamic data (wind variables).
+        
+        Args:
+            timestamp: Timestamp string (e.g., '2024-07-15_12-00')
+        """
+        self.timestamp = timestamp
     
     def _coords_to_pixel(self, x: float, y: float) -> Tuple[int, int]:
         """Convert geographic coordinates to pixel row/col."""
         col, row = ~self.transform * (x, y)
         return int(row), int(col)
+
+    # ---------------------------- Summary & IO ---------------------------- #
     
     def summary(self) -> None:
         """Print summary information about the grid."""
@@ -201,6 +177,9 @@ class Grid:
         print(f"  Bounds: {self.bounds}")
         print(f"  Total channels: {len(self.channel_names)}")
         print(f"  Loaded channels: {len(self.loaded_channels)}/{len(self.channel_names)}")
+        
+        if self.timestamp:
+            print(f"  Timestamp: {self.timestamp}")
         
         if self.loaded_channels:
             print(f"\nLoaded:")
@@ -222,12 +201,7 @@ class Grid:
                 print(f"    {name}: {len(mapping)} categories")
     
     def save(self, filepath: str) -> None:
-        """
-        Save grid to disk.
-        
-        Args:
-            filepath: Path to save file (.npz format)
-        """
+        """Save grid to disk (.npz format)."""
         filepath = Path(filepath)
         filepath.parent.mkdir(parents=True, exist_ok=True)
         
@@ -239,21 +213,14 @@ class Grid:
             crs=str(self.crs),
             channel_names=self.channel_names,
             loaded_channels=list(self.loaded_channels),
-            categorical_mappings=str(self.categorical_mappings)
+            categorical_mappings=str(self.categorical_mappings),
+            timestamp=self.timestamp if self.timestamp else ""
         )
         print(f"Grid saved to {filepath}")
     
     @classmethod
     def load(cls, filepath: str) -> 'Grid':
-        """
-        Load grid from disk.
-        
-        Args:
-            filepath: Path to saved grid file
-            
-        Returns:
-            Grid instance
-        """
+        """Load grid from disk."""
         data = np.load(filepath, allow_pickle=True)
         
         grid = cls(
@@ -266,12 +233,14 @@ class Grid:
         grid.data = data['data']
         grid.loaded_channels = set(data['loaded_channels'])
         grid.categorical_mappings = eval(str(data['categorical_mappings']))
+        grid.timestamp = str(data['timestamp']) if data['timestamp'] else None
         
         return grid
-    
+
     def __repr__(self) -> str:
+        timestamp_str = f", timestamp='{self.timestamp}'" if self.timestamp else ""
         return (
             f"Grid(shape={self.shape}, "
             f"channels={len(self.channel_names)}, "
-            f"loaded={len(self.loaded_channels)})"
+            f"loaded={len(self.loaded_channels)}{timestamp_str})"
         )
