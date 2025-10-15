@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/Users/alvarogalvan/wildfire_nca/.venv"
+VIRTUAL_ENV="/Users/alvarogalvan/Projects/Wildfire-Neural-Cellular-Automata/.venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
